@@ -1,0 +1,3 @@
+.schema tb_user;
+sqlite3 user.db
+select * from tb_user;

@@ -1,0 +1,7 @@
+to aaa : gdhgd
+singleChat( from aaa ): gdhgd
+to aaa : sdgf
+singleChat( from aaa ): sdgfto aaa : gdhgd
+singleChat( from aaa ): gdhgd
+to aaa : sdgf
+singleChat( from aaa ): sdgf

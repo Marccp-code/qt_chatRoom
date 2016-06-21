@@ -1,0 +1,151 @@
+#include "mainwindow.h"
+#include "ui_mainwindow.h"
+#include "ClientSocket.h"
+#include <QHostAddress>
+#include <QTcpSocket>
+#include <QThread>
+#include <QStringList>
+#include <ClientManager.h>
+#include "Package.h"
+#include <QFileDialog>
+#include <QMessageBox>
+
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    ui->setupUi(this);
+    setWindowTitle("server");
+    ip = "127.0.0.1";
+    port = 8888;
+    server = new QTcpServer(this);
+    connect(server, SIGNAL(newConnection()), this, SLOT(onNewConnection()));
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+}
+
+//处理新的用户
+void MainWindow::onNewConnection(){
+    QTcpSocket* socket = server->nextPendingConnection();
+    ClientSocket* cs = new ClientSocket(socket);
+
+    connect(cs, SIGNAL(showMainWindow(pack_t*)), this, SLOT(toShowMainWindow(pack_t*)));
+    connect(cs, SIGNAL(showMainWindow_string(QString)), this, SLOT(toShowMainWindow_string(QString)));
+    connect(cs, SIGNAL(onlineList_emit(QString)), this, SLOT(solve_onlineListEmit(QString)));
+    connect(cs, SIGNAL(setTextEdit(QString)), this, SLOT(toSetTextEdit(QString)));
+    connect(cs, SIGNAL(sendPackage(pack_t*, QTcpSocket*)), this, SLOT(toSendPackage(pack_t*, QTcpSocket*)));
+
+    QThread* thread = new QThread();
+    cs->moveToThread(thread);
+    thread->start();
+    ui->te_info->append("new connection...");
+}
+
+//广播
+void MainWindow::on_btn_boardCast_clicked()
+{
+    pack_t pack;
+    memset(&pack, 0, sizeof(pack));
+     pack.type = BORDCAST;
+    QString str = ui->le_boardCast->text();
+    string sStr = str.toStdString();
+    strcpy(pack.chat_info, sStr.data());
+    ClientManager* manager = ClientManager::getInstance();
+    manager->sendString(&pack);
+    str = "boardCast: " + str;
+    ui->te_info->append(str);
+    ui->le_boardCast->clear();
+}
+
+//在主窗口显示单聊信息
+void MainWindow::toShowMainWindow(pack_t* pack){
+    QString name = QString(QLatin1String(pack->name)) ;
+    QString des_name = QString(QLatin1String(pack->des_name)) ;
+    QString info = QString(QLatin1String(pack->chat_info)) ;
+    QString str =  name + " send to " + des_name + " : " + info;
+    ui->te_info->append(str);
+}
+
+//用新的ip和port链接
+void MainWindow::on_btn_refresh_clicked()
+{
+    QString tem_ip = ui->le_ip->text();
+    int tem_port = ui->le_port->text().toInt();
+
+    if(NULL !=tem_ip && 0 != 0){
+        this->ip = tem_ip;
+        this->port = tem_port;
+    }
+
+    if(server->isListening()){
+        ui->te_info->append("server disconnect...");
+        //server->disconnect;
+     }
+
+    server->listen((QHostAddress)ip, port);
+    ui->te_info->append("start listening...");
+    ui->le_ip->clear();
+    ui->le_port->clear();
+}
+
+//显示在线列表
+void MainWindow::solve_onlineListEmit(QString str){
+    //显示到Mainwindow的在线列表
+    ui->lw_onlineUsers->clear();
+    QStringList strlist;
+    strlist = str.split(",",  QString::SkipEmptyParts);
+
+    QList<QString>::Iterator it;
+    int i = 1;
+
+    for(it = strlist.begin(); it != strlist.end(); it++, i++){
+         QListWidgetItem* lst1 = new QListWidgetItem(*it, ui->lw_onlineUsers);
+         ui->lw_onlineUsers->insertItem(i, lst1);
+    }
+     ui->lw_onlineUsers->show();
+
+    //将在线列表发给所有客户端
+     pack_t pack;
+     memset(&pack, 0, sizeof(pack));
+     pack.type = REFRESH_ONLINEUSERS;
+     QString send_str = str;
+     string sStr = send_str.toStdString();
+     strcpy(pack.chat_info, sStr.data());
+     ClientManager* manager = ClientManager::getInstance();
+     manager->sendString(&pack);
+}
+
+void MainWindow::toSetTextEdit(QString str){
+    ui->te_info->append(str);
+}
+
+void MainWindow::toShowMainWindow_string(QString str){
+    ui->te_info->append(str);
+}
+
+void MainWindow::toSendPackage(pack_t* pack, QTcpSocket* socket){
+    socket->write((char*)pack, sizeof(pack_t));
+    socket->waitForBytesWritten(sizeof(pack_t));
+}
+
+//关闭处理
+void MainWindow::closeEvent(){
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Save File"), "./record.txt",
+                                                    tr("Text Files (*.txt)"));
+    if (!fileName.isEmpty()) {
+      QFile file(fileName);
+      if (!file.open(QIODevice::Append)) {
+         // error message
+      } else {
+        QTextStream stream(&file);
+        stream << ui->te_info->toPlainText();
+        stream.flush();
+        file.close();
+      }
+    }
+
+    this->close();
+}
